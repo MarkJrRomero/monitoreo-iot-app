@@ -23,7 +23,7 @@ export const getWebSocketConfig = () => {
   
   if (__DEV__) {
     if (Platform.OS === 'android') {
-      defaultHost = '10.0.2.2:3000';
+      defaultHost = '192.168.1:3000';
     } else if (Platform.OS === 'ios') {
       defaultHost = 'localhost:3000';
     } else {

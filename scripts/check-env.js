@@ -23,13 +23,13 @@ if (envExists) {
 } else {
   console.log('⚠️  Archivo .env no encontrado');
   console.log('💡 Crea un archivo .env en la raíz del proyecto con las siguientes variables:');
-  console.log('   API_URL=http://10.0.2.2:3000');
-  console.log('   WS_HOST=10.0.2.2:3000');
-  console.log('   WS_URL=ws://10.0.2.2:3000');
+  console.log('   API_URL=http://192.168.1:3000');
+  console.log('   WS_HOST=192.168.1:3000');
+  console.log('   WS_URL=ws://192.168.1:3000');
 }
 
 console.log('\n📖 Para más información, consulta ENV_VARIABLES.md');
 console.log('\n🎯 Valores por defecto configurados en app.config.js:');
-console.log('   API_URL: http://10.0.2.2:3000');
-console.log('   WS_HOST: 10.0.2.2:3000');
-console.log('   WS_URL: ws://10.0.2.2:3000'); 
+console.log('   API_URL: http://192.168.1:3000');
+console.log('   WS_HOST: 192.168.1:3000');
+console.log('   WS_URL: ws://192.168.1:3000'); 

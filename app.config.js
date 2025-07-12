@@ -36,9 +36,9 @@ export default {
       typedRoutes: true
     },
     extra: {
-      apiUrl: process.env.API_URL || 'http://10.0.2.2:3000',
-      wsHost: process.env.WS_HOST || '10.0.2.2:3000',
-      wsUrl: process.env.WS_URL || 'ws://10.0.2.2:3000',
+      apiUrl: process.env.API_URL || 'http://192.168.1:3000',
+      wsHost: process.env.WS_HOST || '192.168.1:3000',
+      wsUrl: process.env.WS_URL || 'ws://192.168.1:3000',
     },
   },
 };

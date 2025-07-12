@@ -13,7 +13,7 @@ export default function HomeScreen() {
   
   // Obtener funciones de actualización de los hooks
   const { refetchVehicles, refetchAlerts } = useStats();
-  const { connect, disconnect, isConnected, isLoading } = useVehicleWebSocket([], () => {});
+  const { isConnected, isLoading, forceReconnect } = useVehicleWebSocket([], () => {});
 
   // Función para manejar el pull-to-refresh de toda la página
   const handleRefresh = useCallback(async () => {
@@ -28,20 +28,9 @@ export default function HomeScreen() {
         refetchAlerts()
       ]);
       
-      // Reconectar WebSocket si es necesario
-      if (!isConnected && !isLoading) {
-        console.log('🔌 Reconectando WebSocket desde página principal...');
-        disconnect();
-        setTimeout(() => {
-          connect();
-        }, 1000);
-      } else {
-        console.log('🔄 Forzando reconexión del WebSocket desde página principal...');
-        disconnect();
-        setTimeout(() => {
-          connect();
-        }, 500);
-      }
+      // Forzar reconexión del WebSocket
+      console.log('🔄 Forzando reconexión del WebSocket desde página principal...');
+      forceReconnect();
       
       console.log('✅ Actualización completa de la página completada');
     } catch (error) {
@@ -49,7 +38,7 @@ export default function HomeScreen() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [isConnected, isLoading, refetchVehicles, refetchAlerts, connect, disconnect]);
+  }, [forceReconnect, refetchVehicles, refetchAlerts]);
 
   return (
     <ScrollView

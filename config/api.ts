@@ -9,7 +9,7 @@ export const getBaseApiUrl = (): string => {
   }
 
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3000';
+    return 'http://192.168.1:3000';
   } else if (Platform.OS === 'ios') {
     return 'http://localhost:3000';
   } else {
@@ -36,7 +36,7 @@ export const getWebSocketUrl = (): string => {
   }
 
   if (Platform.OS === 'android') {
-    return 'ws://10.0.2.2:3000';
+    return 'ws://192.168.1:3000';
   } else if (Platform.OS === 'ios') {
     return 'ws://localhost:3000';
   } else {

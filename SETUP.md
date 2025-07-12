@@ -31,9 +31,9 @@ Crea un archivo `.env` en la raíz del proyecto:
 
 ```bash
 # Para Android Emulator
-API_URL=http://10.0.2.2:3000
-WS_HOST=10.0.2.2:3000
-WS_URL=ws://10.0.2.2:3000
+API_URL=http://192.168.1:3000
+WS_HOST=192.168.1:3000
+WS_URL=ws://192.168.1:3000
 
 # Para iOS Simulator
 # API_URL=http://localhost:3000
@@ -178,8 +178,8 @@ monitoreo-iot-app/
 
 ### Android Emulator
 
-- **API**: `http://10.0.2.2:3000`
-- **WebSocket**: `ws://10.0.2.2:3000`
+- **API**: `http://192.168.1:3000`
+- **WebSocket**: `ws://192.168.1:3000`
 
 ### iOS Simulator
 
@@ -189,7 +189,7 @@ monitoreo-iot-app/
 ## 🚨 Notas Importantes
 
 1. **Variables de Entorno**: Siempre verifica con `npm run check-env`
-2. **Emulador Android**: Usa `10.0.2.2` en lugar de `localhost`
+2. **Emulador Android**: Usa `192.168.1` en lugar de `localhost`
 3. **iOS Simulator**: Usa `localhost` normalmente
 4. **Web**: Usa `localhost` normalmente
 5. **Producción**: Cambia las URLs según tu servidor

@@ -1,8 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, Text, View } from 'react-native';
-import MapView, { Callout, Marker } from 'react-native-maps';
-import { useAuth } from '../hooks/useAuth';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import { useStats } from '../hooks/useStats';
 import { useVehicleWebSocket } from '../hooks/useVehicleWebSocket';
 import { Vehicle } from '../models/stats';
@@ -12,19 +12,50 @@ interface LiveMapCardProps {
   onAlert?: (alert: VehicleAlert) => void;
 }
 
-const { width, height } = Dimensions.get('window');
+// Componente memoizado para los marcadores
+const VehicleMarker = React.memo<{
+  marker: {
+    id: string;
+    coordinate: { latitude: number; longitude: number };
+    title: string;
+    description: string;
+    pinColor: string;
+    vehicle: Vehicle;
+  };
+  isSelected: boolean;
+  onMarkerPress: (id: string) => void;
+}>(({ marker, isSelected, onMarkerPress }) => {
+  console.log('Renderizando marcador:', marker.id, 'Estado:', marker.vehicle.estado);
 
-export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
-  const { token } = useAuth();
+  return (
+    <Marker
+      key={marker.id}
+      coordinate={marker.coordinate}
+      pinColor={isSelected ? '#FF5722' : marker.pinColor}
+      title={marker.vehicle.nombre || 'Vehículo'}
+      description={`Estado: ${marker.vehicle.estado}`}
+      onPress={() => {
+        console.log('Marcador presionado:', marker.id, marker.vehicle.nombre);
+        onMarkerPress(marker.id);
+      }}
+      tracksViewChanges={false}
+      anchor={{ x: 0.5, y: 1.0 }}
+    />
+  );
+});
+
+VehicleMarker.displayName = 'VehicleMarker';
+
+const LiveMapCardComponent: React.FC<LiveMapCardProps> = ({ onAlert }) => {
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
+  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
-  const lastAlertTimeRef = useRef<number>(0);
 
   const {
     vehicles: initialVehicles,
     alerts: initialAlerts,
-    isLoading,
+    isLoading: statsLoading,
     refetchVehicles,
     refetchAlerts
   } = useStats();
@@ -38,10 +69,86 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
     refetchStats();
   }, [refetchStats]);
 
-  const { vehicleData: wsVehicleData, isConnected } = useVehicleWebSocket(initialVehicles, (alert) => {
+  const { 
+    vehicleData: wsVehicleData, 
+    isConnected, 
+    isLoading: wsLoading,
+    forceReconnect,
+  } = useVehicleWebSocket(initialVehicles, (alert) => {
     if (onAlert) onAlert(alert);
     debouncedRefetchStats();
   });
+
+  // Memoizar los vehículos para evitar re-renders innecesarios
+  const allVehicles = useMemo(() => {
+    const initialVehiclesMap = initialVehicles.reduce((acc, vehicle) => {
+      acc[vehicle.dispositivo_id] = vehicle;
+      return acc;
+    }, {} as Record<string, Vehicle>);
+    
+    return { ...initialVehiclesMap, ...wsVehicleData };
+  }, [initialVehicles, wsVehicleData]);
+
+  // Memoizar vehículos con coordenadas válidas
+  const vehiclesWithCoordinates = useMemo(() => 
+    Object.values(allVehicles).filter(vehicle => 
+      vehicle.latitud && vehicle.longitud && 
+      !isNaN(parseFloat(vehicle.latitud)) && 
+      !isNaN(parseFloat(vehicle.longitud))
+    ), [allVehicles]);
+
+  const getStatusColor = useCallback((status: string) => {
+    console.log('Estado:', status);
+    
+    // Si hay múltiples estados separados por |
+    if (status?.includes('|')) {
+      const states = status.split('|').map(s => s.trim().toLowerCase());
+      console.log('Estados múltiples:', states);
+      
+      // Priorizar colores según la severidad
+      if (states.includes('temperatura')) return '#F44336'; // Rojo para temperatura
+      if (states.includes('combustible')) return '#2196F3'; // Azul para combustible normal
+      if (states.includes('velocidad')) return '#9C27B0'; // Púrpura para velocidad normal
+      
+      return '#4B4B4BFF'; // Gris por defecto
+    }
+    
+    // Estado único
+    switch (status?.toLowerCase()) {
+      case 'temperatura':
+        return '#4CAF50';
+      case 'combustible':
+        return '#F44336';
+      case 'velocidad':
+        return '#FF9800';
+      case 'alerta de temperatura':
+        return '#F44336';
+      case 'alerta de combustible':
+        return '#FF9800';
+      case 'alerta de exceso de velocidad':
+        return '#FFC107';
+      default:
+        return '#4B4B4BFF';
+    }
+  }, []);
+
+  // Memoizar marcadores para evitar re-renders innecesarios
+  const mapMarkers = useMemo(() => {
+    const markers = vehiclesWithCoordinates.map((vehicle) => ({
+      id: vehicle.dispositivo_id,
+      coordinate: {
+        latitude: parseFloat(vehicle.latitud),
+        longitude: parseFloat(vehicle.longitud),
+      },
+      title: vehicle.nombre,
+      description: `Estado: ${vehicle.estado} | Velocidad: ${vehicle.velocidad} km/h`,
+      pinColor: getStatusColor(vehicle.estado),
+      vehicle
+    }));
+    
+    console.log('Marcadores generados:', markers.length, markers.map(m => ({ id: m.id, estado: m.vehicle.estado })));
+    return markers;
+  }, [vehiclesWithCoordinates, getStatusColor]);
 
   useEffect(() => {
     const getLocationPermission = async () => {
@@ -66,20 +173,21 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
     getLocationPermission();
   }, []);
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'activo':
-        return '#4CAF50';
-      case 'inactivo':
-        return '#F44336';
-      case 'mantenimiento':
-        return '#FF9800';
-      default:
-        return '#9E9E9E';
+  const getAlertColor = useCallback((severity: string) => {
+    // Si hay múltiples alertas separadas por |
+    if (severity?.includes('|')) {
+      const alerts = severity.split('|').map(s => s.trim().toLowerCase());
+      console.log('Alertas múltiples:', alerts);
+      
+      // Priorizar colores según la severidad
+      if (alerts.includes('alerta de temperatura')) return '#F44336'; // Rojo para temperatura
+      if (alerts.includes('alerta de combustible')) return '#FF9800'; // Naranja para combustible
+      if (alerts.includes('alerta de exceso de velocidad')) return '#FFC107'; // Amarillo para velocidad
+      
+      return '#4B4B4BFF'; // Gris por defecto
     }
-  };
-
-  const getAlertColor = (severity: string) => {
+    
+    // Alerta única
     switch (severity?.toLowerCase()) {
       case 'alerta de temperatura':
         return '#F44336';
@@ -88,28 +196,12 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
       case 'alerta de exceso de velocidad':
         return '#FFC107';
       default:
-        return '#9E9E9E';
+        return '#4B4B4BFF';
     }
-  };
+  }, []);
 
-  // Combinar datos iniciales con datos del WebSocket usando useMemo para evitar re-renders
-  const allVehicles = React.useMemo(() => {
-    const initialVehiclesMap = initialVehicles.reduce((acc, vehicle) => {
-      acc[vehicle.dispositivo_id] = vehicle;
-      return acc;
-    }, {} as Record<string, Vehicle>);
-    
-    return { ...initialVehiclesMap, ...wsVehicleData };
-  }, [initialVehicles, wsVehicleData]);
-
-  // Función para centrar el mapa en todos los vehículos
+  // Función para centrar el mapa en todos los vehículos (solo una vez)
   const fitMapToVehicles = useCallback(() => {
-    const vehiclesWithCoordinates = Object.values(allVehicles).filter(vehicle =>
-      vehicle.latitud && vehicle.longitud &&
-      !isNaN(parseFloat(vehicle.latitud)) &&
-      !isNaN(parseFloat(vehicle.longitud))
-    );
-
     if (vehiclesWithCoordinates.length > 0) {
       const coordinates = vehiclesWithCoordinates.map(vehicle => ({
         latitude: parseFloat(vehicle.latitud),
@@ -121,7 +213,7 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
         animated: true,
       });
     }
-  }, [allVehicles]);
+  }, [vehiclesWithCoordinates]);
 
   // Función para centrar el mapa en la ubicación del usuario
   const centerOnUserLocation = useCallback(() => {
@@ -135,27 +227,16 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
     }
   }, [userLocation]);
 
-  const vehiclesWithCoordinates = React.useMemo(() => 
-    Object.values(allVehicles).filter(vehicle => 
-      vehicle.latitud && vehicle.longitud && 
-      !isNaN(parseFloat(vehicle.latitud)) && 
-      !isNaN(parseFloat(vehicle.longitud))
-    ), [allVehicles]);
-
+  // Solo centrar el mapa una vez cuando se cargan los vehículos inicialmente
   useEffect(() => {
-    if (Object.keys(allVehicles).length > 0) {
-      fitMapToVehicles();
+    if (vehiclesWithCoordinates.length > 0 && mapRef.current) {
+      // Solo centrar si es la primera carga
+      const timer = setTimeout(() => {
+        fitMapToVehicles();
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [allVehicles, fitMapToVehicles]);
-
-  if (!token) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Mapa en Tiempo Real</Text>
-        <Text style={styles.errorText}>Debes hacer login para ver el mapa</Text>
-      </View>
-    );
-  }
+  }, []); // Sin dependencias para que solo se ejecute una vez
 
   const initialRegion = userLocation ? {
     latitude: userLocation.coords.latitude,
@@ -169,16 +250,30 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
     longitudeDelta: 0.0421,
   };
 
+  const isLoading = statsLoading || wsLoading;
+
+  const handleMarkerPress = useCallback((markerId: string) => {
+    console.log('Marcador seleccionado:', markerId);
+    setSelectedMarker(markerId);
+  }, []);
+
+  const handleMapPress = useCallback(() => {
+    setSelectedMarker(null);
+  }, []);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Mapa en Tiempo Real</Text>
+        <Text style={styles.title}>Mapa Vehículos</Text>
         <View style={styles.statusContainer}>
           <View style={[styles.statusDot, { backgroundColor: isConnected ? '#4CAF50' : isLoading ? '#FF9800' : '#F44336' }]} />
           <Text style={styles.statusText}>
             {isConnected ? 'Conectado' : isLoading ? 'Conectando...' : 'Desconectado'}
           </Text>
         </View>
+        <TouchableOpacity style={styles.reconnectButton} onPress={forceReconnect}>
+          <Ionicons name="refresh" size={15} color="white" />
+        </TouchableOpacity>
       </View>
 
       {/* Estadísticas */}
@@ -206,61 +301,109 @@ export const LiveMapCard: React.FC<LiveMapCardProps> = ({ onAlert }) => {
               centerOnUserLocation();
             }
           }}
+          onPress={handleMapPress}
+          // Configuraciones para evitar movimientos automáticos
+          followsUserLocation={false}
+          moveOnMarkerPress={true}
+          showsCompass={true}
+          showsScale={true}
+          showsBuildings={false}
+          showsTraffic={false}
+          showsIndoors={false}
+          showsPointsOfInterest={false}
         >
-          {vehiclesWithCoordinates.map((vehicle) => (
-            <Marker
-              key={vehicle.dispositivo_id}
-              coordinate={{
-                latitude: parseFloat(vehicle.latitud),
-                longitude: parseFloat(vehicle.longitud),
-              }}
-              pinColor={getStatusColor(vehicle.estado)}
-              title={vehicle.nombre}
-              description={`Estado: ${vehicle.estado} | Velocidad: ${vehicle.velocidad} km/h`}
-            >
-              <Callout>
-                <View style={styles.calloutContainer}>
-                  <Text style={styles.calloutTitle}>{vehicle.nombre}</Text>
-                  <Text style={styles.calloutText}>Estado: {vehicle.estado}</Text>
-                  <Text style={styles.calloutText}>Velocidad: {vehicle.velocidad} km/h</Text>
-                  <Text style={styles.calloutText}>Temperatura: {vehicle.temperatura}°C</Text>
-                  <Text style={styles.calloutText}>Combustible: {vehicle.combustible}%</Text>
-                  <Text style={styles.calloutText}>
-                    Lat: {parseFloat(vehicle.latitud).toFixed(4)}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    Lng: {parseFloat(vehicle.longitud).toFixed(4)}
-                  </Text>
-                  <Text style={styles.calloutText}>
-                    Última actualización: {new Date(vehicle.ultima_actualizacion).toLocaleString()}
-                  </Text>
-                </View>
-              </Callout>
-            </Marker>
+          {mapMarkers.map((marker) => (
+            <VehicleMarker 
+              key={marker.id} 
+              marker={marker} 
+              isSelected={selectedMarker === marker.id}
+              onMarkerPress={handleMarkerPress}
+            />
           ))}
         </MapView>
       </View>
+
+      {/* Panel de información del vehículo seleccionado */}
+      {selectedMarker && (() => {
+        const selectedVehicle = allVehicles[selectedMarker];
+        if (!selectedVehicle) return null;
+
+        const formatStatus = (status: string) => {
+          if (!status) return 'Sin estado';
+          if (status?.includes('|')) {
+            return status.split('|').map(s => s.trim()).join('\n• ');
+          }
+          return status;
+        };
+
+        return (
+          <View style={styles.vehicleInfoPanel}>
+            <View style={styles.vehicleInfoHeader}>
+              <Text style={styles.vehicleInfoTitle}>{selectedVehicle.nombre || 'Vehículo'}</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setSelectedMarker(null)}
+              >
+                <Ionicons name="close" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.vehicleInfoContent}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Estado: {formatStatus(selectedVehicle.estado)}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Velocidad: {selectedVehicle.velocidad || '0'} km/h</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Temperatura: {selectedVehicle.temperatura || '0'}°C</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Combustible: {selectedVehicle.combustible || '0'}%</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Ubicación: {parseFloat(selectedVehicle.latitud || '0').toFixed(4)}, {parseFloat(selectedVehicle.longitud || '0').toFixed(4)}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Última actualización: {new Date(selectedVehicle.ultima_actualizacion || Date.now()).toLocaleString()}</Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* Panel de alertas */}
       {initialAlerts.length > 0 && (
         <View style={styles.alertsPanel}>
           <Text style={styles.alertsTitle}>Alertas Activas ({initialAlerts.length})</Text>
-          {initialAlerts.slice(0, 3).map((alert, index) => (
-            <View key={index} style={styles.alertCard}>
-              <View style={styles.alertHeader}>
-                <Text style={styles.alertTitle}>{alert.dispositivo_id}</Text>
-                <View style={[styles.severityBadge, { backgroundColor: getAlertColor(alert.tipo_alerta) }]}>
-                  <Text style={styles.severityText}>{alert.tipo_alerta.toUpperCase()}</Text>
+          {initialAlerts.slice(0, 3).map((alert, index) => {
+            // Función para formatear el tipo de alerta
+            const formatAlertType = (alertType: string) => {
+              if (alertType?.includes('|')) {
+                return alertType.split('|').map(s => s.trim()).join('\n• ');
+              }
+              return alertType;
+            };
+
+            return (
+              <View key={index} style={styles.alertCard}>
+                <View style={styles.alertHeader}>
+                  <View style={[styles.alertDot, { backgroundColor: getAlertColor(alert.tipo_alerta) }]} />
+                  <Text style={styles.alertTitle}>{formatAlertType(alert.tipo_alerta).toUpperCase()}</Text>
                 </View>
+                <Text style={styles.alertDescription}>{alert.nombre} - {alert.dispositivo_id}</Text>
+                <Text style={styles.alertTime}>
+                  {new Date(alert.ultima_actualizacion).toLocaleString()}
+                </Text>
               </View>
-              <Text style={styles.alertMessage}>{alert.nombre}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
   );
-};
+}
+
+export const LiveMapCard = React.memo(LiveMapCardComponent);
 
 const styles = StyleSheet.create({
   container: {
@@ -286,6 +429,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+  },
+  reconnectButtonContainer: {
+    marginLeft: 10, 
   },
   statusContainer: {
     flexDirection: 'row',
@@ -329,21 +475,7 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  calloutContainer: {
-    width: 250,
-    padding: 12,
-  },
-  calloutTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  calloutText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
+
   alertsPanel: {
     padding: 16,
     backgroundColor: '#f8f9fa',
@@ -400,5 +532,70 @@ const styles = StyleSheet.create({
     color: '#F44336',
     textAlign: 'center',
     padding: 20,
+  },
+  alertDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  alertDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 6,
+  },
+  reconnectButton: {
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 4,
+  },
+  reconnectButtonText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  vehicleInfoPanel: {
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 8,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  vehicleInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  vehicleInfoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  vehicleInfoContent: {
+    gap: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#666',
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 2,
+    textAlign: 'right',
   },
 }); 
