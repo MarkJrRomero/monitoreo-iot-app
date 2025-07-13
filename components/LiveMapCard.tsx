@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import { useAuthContext } from '../contexts/AuthContext';
 import { useStats } from '../hooks/useStats';
 import { useVehicleWebSocket } from '../hooks/useVehicleWebSocket';
 import { Vehicle } from '../models/stats';
@@ -11,6 +12,22 @@ import { VehicleAlert } from '../models/vehiclel';
 interface LiveMapCardProps {
   onAlert?: (alert: VehicleAlert) => void;
 }
+
+// Función para enmascarar el dispositivo_id según el rol
+const maskDeviceId = (deviceId: string, userRole: string): string => {
+  if (userRole === 'admin') {
+    return deviceId;
+  }
+  
+  // Enmascarar el dispositivo_id para usuarios no admin
+  if (!deviceId || deviceId.length < 8) {
+    return deviceId;
+  }
+  
+  const prefix = deviceId.substring(0, 4);
+  const suffix = deviceId.substring(deviceId.length - 4);
+  return `${prefix}-****-${suffix}`;
+};
 
 // Componente memoizado para los marcadores
 const VehicleMarker = React.memo<{
@@ -47,6 +64,7 @@ const VehicleMarker = React.memo<{
 VehicleMarker.displayName = 'VehicleMarker';
 
 const LiveMapCardComponent: React.FC<LiveMapCardProps> = ({ onAlert }) => {
+  const { usuario } = useAuthContext();
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean>(false);
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
@@ -349,6 +367,9 @@ const LiveMapCardComponent: React.FC<LiveMapCardProps> = ({ onAlert }) => {
             </View>
             <View style={styles.vehicleInfoContent}>
               <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>ID: {maskDeviceId(selectedVehicle.dispositivo_id, usuario?.rol || 'user')}</Text>
+              </View>
+              <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Estado: {formatStatus(selectedVehicle.estado)}</Text>
               </View>
               <View style={styles.infoRow}>
@@ -390,7 +411,7 @@ const LiveMapCardComponent: React.FC<LiveMapCardProps> = ({ onAlert }) => {
                   <View style={[styles.alertDot, { backgroundColor: getAlertColor(alert.tipo_alerta) }]} />
                   <Text style={styles.alertTitle}>{formatAlertType(alert.tipo_alerta).toUpperCase()}</Text>
                 </View>
-                <Text style={styles.alertDescription}>{alert.nombre} - {alert.dispositivo_id}</Text>
+                <Text style={styles.alertDescription}>{alert.nombre} - {maskDeviceId(alert.dispositivo_id, usuario?.rol || 'user')}</Text>
                 <Text style={styles.alertTime}>
                   {new Date(alert.ultima_actualizacion).toLocaleString()}
                 </Text>
